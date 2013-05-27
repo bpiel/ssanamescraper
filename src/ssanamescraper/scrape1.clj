@@ -1,23 +1,22 @@
 (ns ssanamescraper.scrape1
   (:require [net.cgrand.enlive-html :as html]
-            [clj-http.client :as client]))
+            [clj-http.client :as client]
+            [clojure.string :as str]))
 
-(def ^:dynamic *base-url* "http://news.ycombinator.com/")
-
-(defn getYearListSource []   
+(defn getYearListSource [year]
   (client/post "http://www.ssa.gov/cgi-bin/popularnames.cgi" 
                {:form-params
-                {:year 2002
+                {:year year
                 :top 1000
                 :number "p"}}))
 
-(defn getYearList []
+(defn getYearList [source]
   (filter 
     #(and (= 1 (-> % :content count)) (= nil (:attrs %)))
     (html/select 
       (html/html-resource 
         (java.io.StringReader. 
-          (:body (getYearListSource)))) 
+          (:body source))) 
             [:tr :td])))
 
 (defn organize [raw]  
@@ -35,3 +34,12 @@
     (partition 5 
              (map #(-> % :content first) raw)
   )))
+
+(defn renderInsertSQL [organized year]
+  (str/join "\n" (map #(format 
+    "INSERT INTO `baby_name_popularity` (`year`, `name`, `gender`, `rank`, `percentage`) VALUES (%d, '%s', %s, %s, %s);"
+    year, (nth % 2), (nth % 0), (nth % 1), (str/replace (nth % 3) #"%" ""))
+    organized)))
+
+(defn getDataForYearAndRenderInsertSQL [year]
+  (renderInsertSQL (organize (getYearList (getYearListSource year))) year))
